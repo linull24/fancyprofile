@@ -1,10 +1,12 @@
 reference/
 
-# Generated review artifacts — reproducible with `npm run svgo|compression|probe`.
-# The six SVGs the README embeds are committed; these are not.
+# Decision-tool output, regenerated on demand and never referenced by the
+# README. The six experiment SVGs the README embeds stay committed.
 experiments/svgo/
 experiments/compression/
 experiments/probe/
+experiments/look/
+experiments/review/
 node_modules/
 dist/
 coverage/
