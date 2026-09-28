@@ -1,28 +1,26 @@
-// Why does a coarser displacement map produce a *weaker* warp rather than a
-// blurrier one?
+// Measures the displacement directly, instead of inferring it from a picture.
 //
-// The compression sweep showed the grid distortion visibly relaxing as the map
-// got smaller, which contradicts the model: `scale` is held constant, and the
-// encoded value is the offset normalised by scale, so magnitude should survive
-// resampling. The stacked comparison can't settle it — the scene is too busy.
+// A full scene is a bad instrument: it is full of 1.2px lines, so any sub-pixel
+// change rewrites whole lines and a pixel diff reports several percent for a
+// difference nobody can see. One vertical white line on black has an
+// unambiguous centroid, so "where did it land" is a real measurement.
 //
-// So measure the displacement directly: one vertical white line on black, run
-// it through the filter, and find where it actually lands. A single line has an
-// unambiguous centroid, and the expected offset is known in closed form.
+// It settled an argument the pictures could not: whether a coarser map weakens
+// the warp (it does not) or merely smooths it (it does).
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { buildDisplacementMap, displacementFilter } from './displacement.mjs'
+import { buildDisplacementMap } from './displacement.mjs'
+import { H, W, warpFilter } from './scene.mjs'
+import { el, svgDocument } from './svg.mjs'
 
-const W = 800
-const H = 400
 const LINE_X = 100 // deliberately off-centre, where dx is large
 
 const fragment = (uv) => {
   const dx = uv.x - 0.5
   const dy = uv.y - 0.5
-  const warp = 1 + 0.22 * (dx * dx + dy * dy)
-  return { x: 0.5 + dx * warp + Math.sin(uv.y * Math.PI * 6) * 0.006, y: 0.5 + dy * warp }
+  const f = 1 + 0.06 * (dx * dx + dy * dy)
+  return { x: 0.5 + dx * f, y: 0.5 + dy * f }
 }
 
 const SIZES = [
@@ -49,38 +47,29 @@ function landingColumn() {
   for (let px = 1; px < W; px++) {
     const got = fragment({ x: px / W, y: 0.5 }).x
     const err = Math.abs(got - want)
-    if (!best || err < best.err) best = { px, err, got }
+    if (!best || err < best.err) best = { px, err }
   }
   return best
 }
 
 const landing = landingColumn()
 console.log(`probe: line at x=${LINE_X}, centre row`)
-console.log(
-  `  expected landing column = ${landing.px}px (offset ${(landing.px - LINE_X).toFixed(1)}px, residual ${landing.err.toFixed(5)})\n`
-)
+console.log(`  expected landing column = ${landing.px}px (offset ${landing.px - LINE_X}px)\n`)
 
 for (const [mw, mh] of SIZES) {
-  const map = buildDisplacementMap({
-    width: mw,
-    height: mh,
-    fragment,
-    userWidth: W,
-    userHeight: H,
+  const map = buildDisplacementMap({ width: mw, height: mh, fragment, userWidth: W, userHeight: H })
+
+  const svg = svgDocument({
+    width: W,
+    height: H,
+    defs: warpFilter({ id: 'warp', map: map.dataURI, scale: map.scale }),
+    body:
+      el('rect', { width: W, height: H, fill: '#000' }) +
+      el('g', { filter: 'url(#warp)' }, el('rect', { x: LINE_X - 1, y: 0, width: 2, height: H, fill: '#fff' })),
   })
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-  <defs>
-    ${displacementFilter({ id: 'crt', map: map.dataURI, width: W, height: H, scale: map.scale })}
-  </defs>
-  <rect width="${W}" height="${H}" fill="#000"/>
-  <g filter="url(#crt)">
-    <rect x="${LINE_X - 1}" y="0" width="2" height="${H}" fill="#fff"/>
-  </g>
-</svg>
-`
   writeFileSync(join(dir, `probe-${mw}x${mh}.svg`), svg)
   console.log(`  ${String(mw).padStart(4)}x${String(mh).padEnd(4)} scale=${map.scale.toFixed(2)}  written`)
 }
 
-console.log(`\nnow read the landing column of each in the browser`)
+console.log(`\nread the landing column of each in the browser`)

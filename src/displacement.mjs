@@ -72,14 +72,6 @@ export function buildDisplacementMap({
   }
 }
 
-/**
- * The <filter> both upstream projects converge on. sRGB is not optional: the
- * default linearRGB would decode our encoded offsets through a transfer curve
- * and shear the whole displacement field.
- */
-export function displacementFilter({ id, map, width, height, scale }) {
-  return `<filter id="${id}" filterUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}" color-interpolation-filters="sRGB">
-      <feImage href="${map}" width="${width}" height="${height}" result="map"/>
-      <feDisplacementMap in="SourceGraphic" in2="map" xChannelSelector="R" yChannelSelector="G" scale="${scale.toFixed(2)}"/>
-    </filter>`
-}
+// The <filter> that consumes this map is built by scene.warpFilter, so that all
+// SVG markup in the project goes through one builder (svg.mjs). This module
+// only computes the field.
