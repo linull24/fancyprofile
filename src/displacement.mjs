@@ -18,9 +18,24 @@ const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v)
  *   stores values in [0,1] with 0.5 meaning "don't move", so the range only
  *   covers +/- scale/2. Headroom keeps the peak inside that range instead of
  *   clipping at the edge of the field.
+ * @param {3 | 4} [opts.channels] the field is opaque, so alpha is dead weight.
+ * @param {number} [opts.userWidth] the filter's user space, in px. Displacement
+ *   has to be expressed there, not in map pixels: feDisplacementMap's scale is
+ *   in user units, so a map sampled on a coarser grid would otherwise come out
+ *   proportionally weaker instead of merely blurrier. Defaults to the map size,
+ *   which is correct when the two coincide.
+ * @param {number} [opts.userHeight]
  * @returns {{dataURI: string, scale: number, peak: number}}
  */
-export function buildDisplacementMap({ width, height, fragment, headroom = 2 }) {
+export function buildDisplacementMap({
+  width,
+  height,
+  fragment,
+  headroom = 2,
+  channels = 4,
+  userWidth = width,
+  userHeight = height,
+}) {
   const count = width * height
   const dx = new Float64Array(count)
   const dy = new Float64Array(count)
@@ -31,9 +46,9 @@ export function buildDisplacementMap({ width, height, fragment, headroom = 2 }) 
       const i = y * width + x
       const pos = fragment({ x: x / width, y: y / height })
       // A fragment returns a *sample position*; store it as the offset from
-      // where feDisplacementMap would otherwise have sampled.
-      const ox = pos.x * width - x
-      const oy = pos.y * height - y
+      // where feDisplacementMap would otherwise have sampled, in user space.
+      const ox = (pos.x - x / width) * userWidth
+      const oy = (pos.y - y / height) * userHeight
       dx[i] = ox
       dy[i] = oy
       const abs = Math.max(Math.abs(ox), Math.abs(oy))
@@ -42,16 +57,16 @@ export function buildDisplacementMap({ width, height, fragment, headroom = 2 }) 
   }
 
   const scale = peak * headroom || 1
-  const rgba = Buffer.alloc(count * 4)
+  const pixels = Buffer.alloc(count * channels)
   for (let i = 0; i < count; i++) {
-    rgba[i * 4] = Math.round(clamp01(dx[i] / scale + 0.5) * 255)
-    rgba[i * 4 + 1] = Math.round(clamp01(dy[i] / scale + 0.5) * 255)
-    rgba[i * 4 + 2] = 0
-    rgba[i * 4 + 3] = 255
+    pixels[i * channels] = Math.round(clamp01(dx[i] / scale + 0.5) * 255)
+    pixels[i * channels + 1] = Math.round(clamp01(dy[i] / scale + 0.5) * 255)
+    // Blue is unused and stays 0 in both layouts, which deflates to nothing.
+    if (channels === 4) pixels[i * 4 + 3] = 255
   }
 
   return {
-    dataURI: `data:image/png;base64,${encodePNG(width, height, rgba).toString('base64')}`,
+    dataURI: `data:image/png;base64,${encodePNG(width, height, pixels, { channels }).toString('base64')}`,
     scale,
     peak,
   }

@@ -9,6 +9,12 @@
   },
   "scripts": {
     "build": "node src/build-experiments.mjs",
-    "verify": "node src/verify.mjs"
+    "verify": "node src/verify.mjs",
+    "probe": "node src/displacement-probe.mjs",
+    "compression": "node src/compression-experiment.mjs",
+    "svgo": "node src/optimize-experiment.mjs"
+  },
+  "devDependencies": {
+    "svgo": "^4.1.0"
   }
 }

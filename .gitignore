@@ -1,4 +1,10 @@
 reference/
+
+# Generated review artifacts — reproducible with `npm run svgo|compression|probe`.
+# The six SVGs the README embeds are committed; these are not.
+experiments/svgo/
+experiments/compression/
+experiments/probe/
 node_modules/
 dist/
 coverage/

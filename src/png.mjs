@@ -32,21 +32,24 @@ function chunk(type, data) {
   return out
 }
 
-/** @param {Buffer} rgba width*height*4 bytes */
-export function encodePNG(width, height, rgba) {
+/**
+ * @param {Buffer} pixels width*height*channels bytes
+ * @param {{channels?: 3 | 4}} [opts] 3 = RGB (colour type 2), 4 = RGBA (colour type 6)
+ */
+export function encodePNG(width, height, pixels, { channels = 4 } = {}) {
   const ihdr = Buffer.alloc(13)
   ihdr.writeUInt32BE(width, 0)
   ihdr.writeUInt32BE(height, 4)
   ihdr[8] = 8 // bit depth
-  ihdr[9] = 6 // colour type: truecolour + alpha
+  ihdr[9] = channels === 3 ? 2 : 6 // colour type
   // [10..12] compression, filter, interlace all 0
 
   // Each scanline is prefixed with its filter byte (0 = None).
-  const stride = width * 4
+  const stride = width * channels
   const raw = Buffer.alloc((stride + 1) * height)
   for (let y = 0; y < height; y++) {
     raw[y * (stride + 1)] = 0
-    rgba.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride)
+    pixels.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride)
   }
 
   return Buffer.concat([
@@ -78,7 +81,9 @@ export function decodePNG(buf) {
       height = data.readUInt32BE(4)
       bitDepth = data[8]
       colorType = data[9]
-      if (bitDepth !== 8 || colorType !== 6) throw new Error(`unsupported PNG: depth ${bitDepth} colour type ${colorType}`)
+      if (bitDepth !== 8 || (colorType !== 6 && colorType !== 2)) {
+        throw new Error(`unsupported PNG: depth ${bitDepth} colour type ${colorType}`)
+      }
       if (data[12] !== 0) throw new Error('interlaced PNG unsupported')
     } else if (type === 'IDAT') {
       idat.push(data)
@@ -89,15 +94,15 @@ export function decodePNG(buf) {
   }
 
   const raw = inflateSync(Buffer.concat(idat))
-  const bpp = 4
+  const bpp = colorType === 2 ? 3 : 4
   const stride = width * bpp
-  const out = Buffer.alloc(height * stride)
+  const native = Buffer.alloc(height * stride)
   let prev = Buffer.alloc(stride)
 
   for (let y = 0; y < height; y++) {
     const filter = raw[y * (stride + 1)]
     const line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1))
-    const cur = out.subarray(y * stride, (y + 1) * stride)
+    const cur = native.subarray(y * stride, (y + 1) * stride)
     for (let x = 0; x < stride; x++) {
       const a = x >= bpp ? cur[x - bpp] : 0
       const b = prev[x]
@@ -118,5 +123,15 @@ export function decodePNG(buf) {
     prev = cur
   }
 
+  if (bpp === 4) return { width, height, data: native }
+
+  // Normalise RGB to RGBA so callers only ever deal with one layout.
+  const out = Buffer.alloc(width * height * 4)
+  for (let i = 0, j = 0; i < width * height; i++, j += 3) {
+    out[i * 4] = native[j]
+    out[i * 4 + 1] = native[j + 1]
+    out[i * 4 + 2] = native[j + 2]
+    out[i * 4 + 3] = 255
+  }
   return { width, height, data: out }
 }
