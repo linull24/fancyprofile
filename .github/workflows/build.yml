@@ -1,0 +1,32 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # The generated SVGs are committed because the README references them, so
+      # the build has to stay byte-reproducible. Any diff here means an asset was
+      # hand-edited or the scene changed without a rebuild.
+      - name: Rebuild and check assets are in sync
+        run: npm run verify
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: experiments
+          path: experiments/*.svg
+          if-no-files-found: error

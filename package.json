@@ -1,0 +1,14 @@
+{
+  "name": "fancyprofile",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Synthwave SVG renderer experiments for a GitHub profile README",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "node src/build-experiments.mjs",
+    "verify": "node src/build-experiments.mjs && git diff --exit-code -- experiments"
+  }
+}
