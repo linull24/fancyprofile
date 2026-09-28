@@ -118,14 +118,20 @@ export function sceneBody({ sunExtra = '', gridAttrs = '' } = {}) {
     <g ${gridAttrs}>${grid()}</g>`
 }
 
-/** Standalone SVG document wrapper. */
-export function svgDocument({ defs = '', body, style = '', width = W, height = H }) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+/**
+ * Standalone SVG document wrapper.
+ *
+ * `viewBox` is separable from `width`/`height` so a document can render a crop
+ * of the scene at a larger size — a magnifier. Filter regions stay in user
+ * space, so a cropped view still gets the correctly aligned displacement.
+ */
+export function svgDocument({ defs = '', body, style = '', width = W, height = H, viewBox = `0 0 ${width} ${height}` }) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="${viewBox}">
   ${style ? `<style>${style}</style>` : ''}
   <defs>
     ${defs}
   </defs>
-  <rect x="0" y="0" width="${width}" height="${height}" fill="url(#sky)"/>
+  <rect x="0" y="0" width="${W}" height="${H}" fill="url(#sky)"/>
   ${body}
 </svg>
 `
