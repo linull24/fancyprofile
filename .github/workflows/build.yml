@@ -20,8 +20,10 @@ jobs:
       - run: npm ci
 
       # The generated SVGs are committed because the README references them, so
-      # the build has to stay byte-reproducible. Any diff here means an asset was
-      # hand-edited or the scene changed without a rebuild.
+      # they must still match the source. This compares markup and decoded
+      # displacement-map pixels rather than file bytes: zlib's deflate output is
+      # not stable across zlib versions, so the base64 payload legitimately
+      # differs between this runner and a laptop.
       - name: Rebuild and check assets are in sync
         run: npm run verify
 

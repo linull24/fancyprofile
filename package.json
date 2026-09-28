@@ -9,6 +9,6 @@
   },
   "scripts": {
     "build": "node src/build-experiments.mjs",
-    "verify": "node src/build-experiments.mjs && git diff --exit-code -- experiments"
+    "verify": "node src/verify.mjs"
   }
 }
