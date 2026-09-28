@@ -21,6 +21,7 @@ import {
   radialGradient,
   ridgePath,
 } from './svg.mjs'
+import { mandalaPath } from './sun-mandala.mjs'
 
 export const W = 800
 export const H = 400
@@ -28,7 +29,24 @@ export const HORIZON = 250
 
 // Sits just above the horizon so a wide cap clears the ridge line — the ridge
 // peaks reach roughly y=226, and anything of the disc below that is hidden.
+// Named `MOON` for historical reasons and because the shipped ids (`#moon`,
+// `#moonMask`) are part of the committed assets; it is the scene's sun disc.
 const MOON = { x: W / 2, y: HORIZON - 6, r: 92 }
+
+/**
+ * How the disc is drawn. `bands` is the shipped look and the default, so the
+ * committed assets stay byte-identical; the others are alternate stylings of
+ * the same geometry — same centre, same radius, same occlusion by the ridge.
+ *
+ * `eclipse` is the literal black sun: an unlit disc, a bright rim where the
+ * chromosphere shows, and a corona falling off outwards.
+ *
+ * `mandala` is the one style that is not drawn here at all — its outline is a
+ * traced asset (see `sun-mandala.mjs`) rather than a construction, and it is
+ * also the only element in the banner that moves on its own.
+ * @type {readonly ['bands', 'eclipse', 'rays', 'rings', 'mandala']}
+ */
+export const SUN_STYLES = /** @type {const} */ (['bands', 'eclipse', 'rays', 'rings', 'mandala'])
 
 export const PALETTE = {
   skyTop: '#12002e',
@@ -44,7 +62,39 @@ export const PALETTE = {
   floorLow: '#0b0116',
   grid: '#ff2e88',
   star: '#ffffff',
+  // Only the eclipse style uses these. The core is the palette's darkest ink
+  // rather than #000: pure black turns the disc into a hole punched in the sky.
+  sunCore: '#0b0116',
+  corona: '#ffd24d',
+  ray: '#ff2975',
+  // The mandala's body is the one sun that is not painted with the scene's
+  // amber ramp — it is purple. Its *light* is not: the halo it throws is the
+  // same sunlight the other styles radiate (`corona` / `moonGlow` / `moonLow`
+  // below), because a purple disc that glowed purple would read as a lit
+  // sticker, not as a sun. The ramp was picked by rendering it in the scene, on
+  // a magenta sky, not on a swatch.
+  mandalaTop: '#b06cf0',
+  mandalaMid: '#7b2cbf',
+  mandalaLow: '#4c1d95',
 }
+
+/**
+ * The mandala outline, mapped onto the disc once, at load.
+ *
+ * One decimal of the scene's own units is 0.05 units of possible error — half
+ * what the trace already deviates from a true circle, and a twentieth of a
+ * pixel in the rendered banner. Two more decimals would cost 1.4kB to describe
+ * a difference no renderer can show; none at all facets the outer circle
+ * visibly at 2x.
+ */
+const MANDALA = mandalaPath({ x: MOON.x, y: MOON.y, r: MOON.r, precision: 1 })
+
+/**
+ * One turn. Slow on purpose: the grid's loop is 1.8s, and the two are
+ * deliberately unrelated — a sun that pulsed in step with the travel would read
+ * as part of the camera, not as a thing out there turning on its own.
+ */
+const MANDALA_SPIN_SECONDS = 24
 
 // Seeded so committed assets are byte-stable across runs.
 function lcg(seed) {
@@ -99,7 +149,9 @@ function moonBands() {
 }
 
 /** Drawn clean, never inside a filtered group. */
-function moon() {
+function moon({ style }) {
+  if (style === 'eclipse') return eclipseSun()
+  if (style === 'mandala') return mandalaSun()
   const halo = el('circle', { cx: MOON.x, cy: MOON.y, r: MOON.r + 30, fill: 'url(#moonGlow)' })
   const disc = el('circle', {
     cx: MOON.x,
@@ -108,7 +160,131 @@ function moon() {
     fill: 'url(#moon)',
     mask: 'url(#moonMask)',
   })
-  return halo + disc
+  // Rays go behind the disc, so the wedge that would cross the centre is hidden
+  // by the body — they read as light escaping from around it, not as a pinwheel.
+  return (style === 'rays' ? sunRays() : '') + halo + disc
+}
+
+/**
+ * The mandala: a traced ornament, recoloured purple, turning about its centre.
+ *
+ * There is no `moonMask` here, and that is the point of the shape. Every other
+ * style is a disc that the mask cuts holes out of; this outline already carries
+ * its own holes, because its subpaths wind against each other. It also needs no
+ * clipping to the disc: its outer boundary *is* the disc, by construction —
+ * `mandalaPath` fitted that circle and scaled the whole trace onto it.
+ *
+ * What this draws is a rectangle painted with the purple ramp and *shaped* by a
+ * mask whose content turns. Painting the path directly is the obvious thing to
+ * write and it is wrong: a paint server is resolved in the user space of the
+ * element that references it, so a `userSpaceOnUse` ramp inside a rotating
+ * group rotates with that group. The sun visibly darkened as it went round — a
+ * pixel on the rim read #a058e1 at 0° and #5d22a4 at 90° — because the ramp was
+ * turning too. Keeping the paint on a still element and the motion in the mask
+ * separates the two.
+ *
+ * The turn is declared in SMIL rather than CSS because it needs a centre.
+ * `rotate(a cx cy)` states one outright; `transform: rotate()` would need
+ * `transform-box` and `transform-origin` to agree on the same point, and those
+ * do not default the same way across engines.
+ */
+function mandalaSun() {
+  const glow = el('circle', { cx: MOON.x, cy: MOON.y, r: MOON.r + 26, fill: 'url(#mandalaLight)' })
+  const disc = el('rect', {
+    x: MOON.x - MOON.r,
+    y: MOON.y - MOON.r,
+    width: MOON.r * 2,
+    height: MOON.r * 2,
+    fill: 'url(#mandalaMark)',
+    mask: 'url(#mandalaShape)',
+  })
+  return glow + disc
+}
+
+/** One turn of the mandala, as a child of the group it rotates. */
+function mandalaSpin() {
+  return el('animateTransform', {
+    attributeName: 'transform',
+    type: 'rotate',
+    from: `0 ${MOON.x} ${MOON.y}`,
+    to: `360 ${MOON.x} ${MOON.y}`,
+    dur: `${MANDALA_SPIN_SECONDS}s`,
+    repeatCount: 'indefinite',
+  })
+}
+
+/**
+ * The black sun: no light coming off the face, only a rim and a corona.
+ *
+ * The corona is a gradient broad enough that the disc covers its inner half, so
+ * only the falling-off half is ever visible; that is cheaper and smoother than
+ * stroking a blurred ring.
+ */
+function eclipseSun() {
+  const corona = el('circle', { cx: MOON.x, cy: MOON.y, r: MOON.r + 34, fill: 'url(#sunCorona)' })
+  const rim = el('circle', {
+    cx: MOON.x,
+    cy: MOON.y,
+    r: MOON.r + 1,
+    fill: 'none',
+    stroke: 'url(#moon)',
+    'stroke-width': 2.5,
+  })
+  const disc = el('circle', { cx: MOON.x, cy: MOON.y, r: MOON.r, fill: PALETTE.sunCore })
+  return corona + rim + disc
+}
+
+/**
+ * Wedges radiating from behind the disc. Fixed, not animated: these are light
+ * rather than an object, and sweeping a light source around fights the forward
+ * travel. The mandala does turn — it has structure, so its rotation reads as a
+ * thing spinning, not as the light changing.
+ *
+ * Angles are generated rather than hand-placed so the ring closes exactly —
+ * no seam at 2π.
+ */
+function sunRays({ count = 24, inner = MOON.r * 0.9, outer = MOON.r * 1.42, half = 0.03 } = {}) {
+  const parts = []
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2
+    const at = (r, theta) => [
+      (MOON.x + r * Math.cos(theta)).toFixed(1),
+      (MOON.y + r * Math.sin(theta)).toFixed(1),
+    ]
+    parts.push(
+      el('path', {
+        d: path([at(inner, a - half), at(outer, a), at(inner, a + half)], { close: true, precision: 1 }),
+        fill: 'url(#sunRay)',
+        opacity: 0.5,
+      })
+    )
+  }
+  return parts.join('')
+}
+
+/** Concentric gaps, widening outwards. The mirror of the bands, in rings. */
+function sunRings({ count = 5 } = {}) {
+  const rings = []
+  for (let i = 1; i <= count; i++) {
+    rings.push(
+      el('circle', {
+        cx: MOON.x,
+        cy: MOON.y,
+        r: (MOON.r * (0.2 + i * 0.15)).toFixed(1),
+        fill: 'none',
+        stroke: '#000',
+        'stroke-width': (1.2 + i * 0.8).toFixed(1),
+      })
+    )
+  }
+  return rings.join('')
+}
+
+/** Whatever the mask punches out of the disc; `eclipse` is solid. */
+function sunCutouts(style) {
+  if (style === 'bands') return moonBands()
+  if (style === 'rings') return sunRings()
+  return ''
 }
 
 function skyline(seed, baseY, amp, steps, fill, freq) {
@@ -197,14 +373,129 @@ export function warpFilter({ map, scale, id = 'warp', width = W, height = H, hre
 }
 
 /**
+ * Defs that only some sun styles need. Kept out of the common list so the
+ * default document is not carrying dead gradients.
+ * @param {typeof SUN_STYLES[number]} style
+ */
+function sunStyleDefs(style) {
+  if (style === 'eclipse') {
+    // Reaches from inside the disc out past its rim; the visible band is the
+    // part beyond r/1.37 ≈ 0.73 of this radius, so that is where the stops sit.
+    return [
+      radialGradient({
+        id: 'sunCorona',
+        stops: [
+          [0.68, PALETTE.corona, 0],
+          [0.74, PALETTE.corona, 0.9],
+          [0.88, PALETTE.moonGlow, 0.3],
+          [1, PALETTE.moonLow, 0],
+        ],
+      }),
+    ]
+  }
+  if (style === 'rays') {
+    // userSpaceOnUse: every wedge must share one ramp. Per-object bounding boxes
+    // would give each ray its own vertical gradient and the ring would band.
+    const span = MOON.r * 1.42
+    return [
+      linearGradient({
+        id: 'sunRay',
+        gradientUnits: 'userSpaceOnUse',
+        x1: MOON.x,
+        y1: MOON.y - span,
+        x2: MOON.x,
+        y2: MOON.y + span,
+        stops: [
+          [0, PALETTE.moonTop],
+          [0.5, PALETTE.moonMid],
+          [1, PALETTE.moonLow],
+        ],
+      }),
+    ]
+  }
+  if (style === 'mandala') {
+    const span = MOON.r
+    return [
+      // userSpaceOnUse for the same reason as the rays, one step further: the
+      // shape turns, and an objectBoundingBox gradient would turn *with* it, so
+      // the highlight would be glued to the disc instead of coming from above.
+      linearGradient({
+        id: 'mandalaMark',
+        gradientUnits: 'userSpaceOnUse',
+        x1: MOON.x,
+        y1: MOON.y - span,
+        x2: MOON.x,
+        y2: MOON.y + span,
+        stops: [
+          [0, PALETTE.mandalaTop],
+          [0.5, PALETTE.mandalaMid],
+          [1, PALETTE.mandalaLow],
+        ],
+      }),
+      // The light the disc throws: the scene's own sun light, not a purple
+      // bloom. It is drawn at corona strength just outside the rim, where the
+      // eye reads "this thing is emitting", and it reaches *inside* the disc on
+      // purpose — the outline is a lattice, so the holes are where the light
+      // shows through, and they would otherwise frame a dark hole.
+      //
+      // The circle is 118 across a 92 disc, so the rim sits at 0.78 of this
+      // radius; that is where the peak belongs.
+      radialGradient({
+        id: 'mandalaLight',
+        stops: [
+          [0, PALETTE.corona, 0.18],
+          [0.62, PALETTE.corona, 0.42],
+          [0.78, PALETTE.moonGlow, 0.72],
+          [0.88, PALETTE.moonLow, 0.16],
+          [1, PALETTE.moonLow, 0],
+        ],
+      }),
+      // The shape, and the only thing in the banner that moves on its own. It
+      // lives in a mask so that the paint above can stay still; see the note on
+      // `mandalaSun`.
+      el('mask', { id: 'mandalaShape' }, el('g', {}, mandalaSpin() + el('path', { d: MANDALA.d, fill: '#fff' }))),
+    ]
+  }
+  return []
+}
+
+/**
+ * Which of the disc's shared defs a style actually paints with.
+ *
+ * Written down rather than assumed, because a gradient nobody references is the
+ * one kind of dead weight a hand-built document has no excuse for: it costs
+ * bytes and a parse in every renderer, and it cannot be seen to be wrong. The
+ * mandala paints its own purple and masks nothing, and the eclipse paints only
+ * the rim — between them they are the reason this table exists.
+ * @type {Record<typeof SUN_STYLES[number], string[]>}
+ */
+const DISC_DEFS = {
+  bands: ['moon', 'moonGlow', 'moonMask'],
+  eclipse: ['moon'],
+  rays: ['moon', 'moonGlow', 'moonMask'],
+  rings: ['moon', 'moonGlow', 'moonMask'],
+  mandala: [],
+}
+
+function assertSunStyle(style) {
+  if (!SUN_STYLES.includes(style)) {
+    throw new Error(`unknown sun style "${style}" — expected one of ${SUN_STYLES.join(', ')}`)
+  }
+  return style
+}
+
+/**
  * @param {object} [opts]
  * @param {string} [opts.filterDef] markup for a filter the ground will use.
  *   Supplied by the caller so that generating a filter and referencing one stay
  *   independent — experiment 04 needs a turbulence filter that this module has
  *   no reason to know about.
  * @param {string} [opts.extra] any further defs.
+ * @param {typeof SUN_STYLES[number]} [opts.sunStyle]
  */
-export function sceneDefs({ filterDef = '', extra = '' } = {}) {
+export function sceneDefs({ filterDef = '', extra = '', sunStyle = 'bands' } = {}) {
+  assertSunStyle(sunStyle)
+  const used = new Set(DISC_DEFS[sunStyle])
   return [
     linearGradient({
       id: 'sky',
@@ -214,22 +505,25 @@ export function sceneDefs({ filterDef = '', extra = '' } = {}) {
         [1, PALETTE.skyLow],
       ],
     }),
-    linearGradient({
-      id: 'moon',
-      stops: [
-        [0, PALETTE.moonTop],
-        [0.5, PALETTE.moonMid],
-        [1, PALETTE.moonLow],
-      ],
-    }),
-    radialGradient({
-      id: 'moonGlow',
-      stops: [
-        [0.62, PALETTE.moonGlow, 0.45],
-        [0.78, PALETTE.moonGlow, 0.14],
-        [1, PALETTE.moonGlow, 0],
-      ],
-    }),
+    used.has('moon') &&
+      linearGradient({
+        id: 'moon',
+        stops: [
+          [0, PALETTE.moonTop],
+          [0.5, PALETTE.moonMid],
+          [1, PALETTE.moonLow],
+        ],
+      }),
+    used.has('moonGlow') &&
+      radialGradient({
+        id: 'moonGlow',
+        stops: [
+          [0.62, PALETTE.moonGlow, 0.45],
+          [0.78, PALETTE.moonGlow, 0.14],
+          [1, PALETTE.moonGlow, 0],
+        ],
+      }),
+    ...sunStyleDefs(sunStyle),
     linearGradient({
       id: 'floor',
       stops: [
@@ -237,13 +531,14 @@ export function sceneDefs({ filterDef = '', extra = '' } = {}) {
         [1, PALETTE.floorLow],
       ],
     }),
-    el(
-      'mask',
-      { id: 'moonMask' },
-      el('rect', { x: 0, y: 0, width: W, height: H, fill: '#000' }) +
-        el('circle', { cx: MOON.x, cy: MOON.y, r: MOON.r, fill: '#fff' }) +
-        moonBands()
-    ),
+    used.has('moonMask') &&
+      el(
+        'mask',
+        { id: 'moonMask' },
+        el('rect', { x: 0, y: 0, width: W, height: H, fill: '#000' }) +
+          el('circle', { cx: MOON.x, cy: MOON.y, r: MOON.r, fill: '#fff' }) +
+          sunCutouts(sunStyle)
+      ),
     // Grid fade: hidden at the horizon, opaque by y≈277. Near the vanishing
     // point the rungs are under a pixel apart, so they must dissolve rather
     // than pile up — but the fade has to stay short or it leaves a dead band
@@ -272,12 +567,14 @@ export function sceneDefs({ filterDef = '', extra = '' } = {}) {
  * @param {object} [opts]
  * @param {string | null} [opts.filterId] wrap only the ground group in this
  *   filter. Everything above the horizon — moon included — renders clean.
+ * @param {typeof SUN_STYLES[number]} [opts.sunStyle]
  */
-export function sceneBody({ filterId = null, groundAttrs = {}, rungs, rails } = {}) {
+export function sceneBody({ filterId = null, groundAttrs = {}, rungs, rails, sunStyle = 'bands' } = {}) {
+  assertSunStyle(sunStyle)
   return [
     sky(),
     stars(),
-    moon(),
+    moon({ style: sunStyle }),
     // Kept low on purpose: a taller ridge swallows the moon's banded half.
     skyline(3, HORIZON + 2, 26, 16, PALETTE.ridgeFar, 0.03),
     skyline(11, HORIZON + 8, 16, 22, PALETTE.ridgeNear, 0.043),
@@ -288,6 +585,9 @@ export function sceneBody({ filterId = null, groundAttrs = {}, rungs, rails } = 
 /**
  * Both halves of the document. Pass `warp` for the usual case (a displacement
  * map on the ground), or `filterDef` + `filterId` to supply your own filter.
+ *
+ * @param {object} [opts]
+ * @param {typeof SUN_STYLES[number]} [opts.sunStyle] how the sun disc is drawn.
  */
 export function scene({
   warp = null,
@@ -297,11 +597,12 @@ export function scene({
   groundAttrs = {},
   rungs,
   rails,
+  sunStyle = 'bands',
   id = 'warp',
 } = {}) {
   const def = filterDef || (warp ? warpFilter({ ...warp, id }) : '')
   return {
-    defs: sceneDefs({ filterDef: def, extra: extraDefs }),
-    body: sceneBody({ filterId: filterId ?? (warp ? id : null), groundAttrs, rungs, rails }),
+    defs: sceneDefs({ filterDef: def, extra: extraDefs, sunStyle }),
+    body: sceneBody({ filterId: filterId ?? (warp ? id : null), groundAttrs, rungs, rails, sunStyle }),
   }
 }

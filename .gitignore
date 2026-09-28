@@ -7,6 +7,7 @@ experiments/compression/
 experiments/probe/
 experiments/look/
 experiments/review/
+experiments/sunstyles/
 node_modules/
 dist/
 coverage/
