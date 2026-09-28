@@ -16,7 +16,24 @@
 
 ## 实测结果
 
-<!-- 待实测后填写 -->
+2026-09-28 实测（`docs/findings-github-svg.md` 是完整记录）：
+
+- GitHub **原样返回**仓库内 SVG，六个文件 sha256 与本地逐字节相同，不做净化
+- 约束全在浏览器把 SVG 当 `<img>` 加载时的 secure static mode
+
+| # | 能力 | 结果 |
+|---|------|------|
+| 01 | 基线 | ✅ |
+| 02 | SMIL `<animate>` | ✅ 动画在跑 |
+| 03 | `<style>` + `@keyframes` | ✅ 动画在跑 |
+| 04 | filter primitive | ✅ 13.1% 像素偏离基线 |
+| 05 | `feImage` data: URI + `feDisplacementMap` | ✅ 16.7% 像素偏离基线 |
+| 06 | 同上，`xlink:href` | ✅ 与 05 等价 |
+
+结论：`shuding/svg-shaders` 那套位移贴图技术**可以在 README 里离线预计算后使用**。
+
+已知边界：`backdrop-filter`（`liquid-glass` 真正的手法）在 `<img>` 里不可用 —— 只能扭曲自己被
+画出来的样子，不能折射背后的内容。
 
 ### 01 基线
 ![01 baseline](experiments/01-baseline.svg)
