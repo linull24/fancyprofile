@@ -125,33 +125,53 @@ function skyline(seed, baseY, amp, steps, fill, freq) {
   })
 }
 
-function ground({ filterId = null, attrs = {} }) {
+/**
+ * The rails. A forward-moving camera does not move these — they converge on the
+ * vanishing point whatever the distance — so they stay put while the rungs
+ * travel.
+ */
+export function verticalLines() {
+  return Array.from({ length: 19 }, (_, i) =>
+    path([
+      [W / 2, HORIZON],
+      [W / 2 + (i - 9) * 96, H],
+    ])
+  ).join('')
+}
+
+/** Rungs with perspective spacing, bunched towards the vanishing point. */
+export function staticHorizontals(count = 12) {
+  return Array.from({ length: count }, (_, i) => {
+    const y = HORIZON + (H - HORIZON) * Math.pow((i + 1) / count, 2.2)
+    return path([
+      [0, y],
+      [W, y],
+    ])
+  }).join('')
+}
+
+const GRID_STYLE = { stroke: PALETTE.grid, 'stroke-width': 1.2, fill: 'none', opacity: 0.85 }
+
+/**
+ * A grid line element. Exported because the animated scene has to build its own
+ * rungs — they carry an <animate> child — and must not drift from the static
+ * ones stylistically.
+ * @param {{d: string, class?: string, children?: string}} opts
+ */
+export function gridPath({ d, class: className, children = '' }) {
+  return el('path', { class: className, d, ...GRID_STYLE }, children)
+}
+
+function ground({ filterId = null, attrs = {}, rungs, rails }) {
   const layers =
     el('rect', { x: 0, y: HORIZON, width: W, height: H - HORIZON, fill: 'url(#floor)' }) +
-    // Horizontals bunch towards the vanishing point; verticals are evenly spaced
-    // along the bottom edge and converge on it.
-    el('path', {
-      class: attrs.class,
-      d: [
-        ...Array.from({ length: 11 }, (_, i) => {
-          const y = HORIZON + (H - HORIZON) * Math.pow((i + 1) / 11, 2.2)
-          return path([
-            [0, y],
-            [W, y],
-          ])
-        }),
-        ...Array.from({ length: 19 }, (_, i) =>
-          path([
-            [W / 2, HORIZON],
-            [W / 2 + (i - 9) * 96, H],
-          ])
-        ),
-      ].join(''),
-      stroke: PALETTE.grid,
-      'stroke-width': 1.2,
-      fill: 'none',
-      opacity: 0.85,
-    })
+    // The mask fades the grid out towards the horizon. Without it the far rungs
+    // converge to under a pixel apart and read as a smear.
+    el(
+      'g',
+      { mask: 'url(#gridMask)' },
+      (rungs ?? gridPath({ class: attrs.class, d: staticHorizontals() })) + (rails ?? gridPath({ d: verticalLines() }))
+    )
 
   return filterId ? el('g', { filter: `url(#${filterId})` }, layers) : layers
 }
@@ -224,6 +244,23 @@ export function sceneDefs({ filterDef = '', extra = '' } = {}) {
         el('circle', { cx: MOON.x, cy: MOON.y, r: MOON.r, fill: '#fff' }) +
         moonBands()
     ),
+    // Grid fade: hidden at the horizon, opaque by y≈277. Near the vanishing
+    // point the rungs are under a pixel apart, so they must dissolve rather
+    // than pile up — but the fade has to stay short or it leaves a dead band
+    // between the ridge line and the first visible rung.
+    linearGradient({
+      id: 'gridFade',
+      stops: [
+        [0, '#000'],
+        [0.18, '#fff'],
+        [1, '#fff'],
+      ],
+    }),
+    el(
+      'mask',
+      { id: 'gridMask', maskUnits: 'userSpaceOnUse', x: 0, y: HORIZON, width: W, height: H - HORIZON },
+      el('rect', { x: 0, y: HORIZON, width: W, height: H - HORIZON, fill: 'url(#gridFade)' })
+    ),
     filterDef,
     extra,
   ]
@@ -236,15 +273,16 @@ export function sceneDefs({ filterDef = '', extra = '' } = {}) {
  * @param {string | null} [opts.filterId] wrap only the ground group in this
  *   filter. Everything above the horizon — moon included — renders clean.
  */
-export function sceneBody({ filterId = null, groundAttrs = {} } = {}) {
+export function sceneBody({ filterId = null, groundAttrs = {}, rungs, rails, moonExtra = '' } = {}) {
   return [
     sky(),
     stars(),
     moon(),
+    moonExtra,
     // Kept low on purpose: a taller ridge swallows the moon's banded half.
     skyline(3, HORIZON + 2, 26, 16, PALETTE.ridgeFar, 0.03),
     skyline(11, HORIZON + 8, 16, 22, PALETTE.ridgeNear, 0.043),
-    ground({ filterId, attrs: groundAttrs }),
+    ground({ filterId, attrs: groundAttrs, rungs, rails }),
   ].join('')
 }
 
@@ -252,10 +290,20 @@ export function sceneBody({ filterId = null, groundAttrs = {} } = {}) {
  * Both halves of the document. Pass `warp` for the usual case (a displacement
  * map on the ground), or `filterDef` + `filterId` to supply your own filter.
  */
-export function scene({ warp = null, filterDef = '', filterId = null, extraDefs = '', groundAttrs = {}, id = 'warp' } = {}) {
+export function scene({
+  warp = null,
+  filterDef = '',
+  filterId = null,
+  extraDefs = '',
+  groundAttrs = {},
+  rungs,
+  rails,
+  moonExtra = '',
+  id = 'warp',
+} = {}) {
   const def = filterDef || (warp ? warpFilter({ ...warp, id }) : '')
   return {
     defs: sceneDefs({ filterDef: def, extra: extraDefs }),
-    body: sceneBody({ filterId: filterId ?? (warp ? id : null), groundAttrs }),
+    body: sceneBody({ filterId: filterId ?? (warp ? id : null), groundAttrs, rungs, rails, moonExtra }),
   }
 }

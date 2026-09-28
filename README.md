@@ -5,6 +5,10 @@
 构建期纯 Node，**不需要浏览器**（上游 `lowlighter/metrics` 要靠 headless Chromium 量高度，
 我们靠"位移场是 uv 的纯函数、画布尺寸构建期已知"避开了这一步）。运行时零依赖。
 
+![night drive](scenes/night-drive.svg)
+
+*`npm run scene` — 向前飞行的透视网格，SMIL 驱动，1.8s 无缝循环。*
+
 ## 场景
 
 分层是设计要点，不是实现细节：

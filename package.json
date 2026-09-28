@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "node src/build-experiments.mjs",
+    "scene": "node src/scene-animated.mjs",
     "verify": "node src/verify.mjs",
     "probe": "node src/displacement-probe.mjs",
     "compression": "node src/compression-experiment.mjs",
