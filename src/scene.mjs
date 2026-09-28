@@ -273,12 +273,11 @@ export function sceneDefs({ filterDef = '', extra = '' } = {}) {
  * @param {string | null} [opts.filterId] wrap only the ground group in this
  *   filter. Everything above the horizon — moon included — renders clean.
  */
-export function sceneBody({ filterId = null, groundAttrs = {}, rungs, rails, moonExtra = '' } = {}) {
+export function sceneBody({ filterId = null, groundAttrs = {}, rungs, rails } = {}) {
   return [
     sky(),
     stars(),
     moon(),
-    moonExtra,
     // Kept low on purpose: a taller ridge swallows the moon's banded half.
     skyline(3, HORIZON + 2, 26, 16, PALETTE.ridgeFar, 0.03),
     skyline(11, HORIZON + 8, 16, 22, PALETTE.ridgeNear, 0.043),
@@ -298,12 +297,11 @@ export function scene({
   groundAttrs = {},
   rungs,
   rails,
-  moonExtra = '',
   id = 'warp',
 } = {}) {
   const def = filterDef || (warp ? warpFilter({ ...warp, id }) : '')
   return {
     defs: sceneDefs({ filterDef: def, extra: extraDefs }),
-    body: sceneBody({ filterId: filterId ?? (warp ? id : null), groundAttrs, rungs, rails, moonExtra }),
+    body: sceneBody({ filterId: filterId ?? (warp ? id : null), groundAttrs, rungs, rails }),
   }
 }

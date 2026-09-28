@@ -17,7 +17,7 @@ import { join } from 'node:path'
 
 import { buildDisplacementMap } from './displacement.mjs'
 import { H, HORIZON, W, gridPath, scene } from './scene.mjs'
-import { el, radialGradient, svgDocument } from './svg.mjs'
+import { el, svgDocument } from './svg.mjs'
 
 // Camera geometry. y = HORIZON + K/z, so K is what the viewport spans: z = 1
 // sits exactly at the bottom edge.
@@ -57,32 +57,6 @@ const rungElement = gridPath({
   }),
 })
 
-// A soft breath of light expanding away from the moon.
-//
-// Not a stroked circle: a hard outline travelling outwards reads as a radar
-// ping sitting on top of the picture, which is not what a glow does. The band
-// is a radial gradient whose peak sits near the circle's own edge, and because
-// the gradient is in objectBoundingBox units it stretches with the animated
-// radius — so the ring of brightness travels outwards and dissolves instead of
-// translating rigidly.
-const pulseGradient = radialGradient({
-  id: 'pulse',
-  stops: [
-    [0.55, '#ffb347', 0],
-    [0.84, '#ffb347', 0.5],
-    [1, '#ffb347', 0],
-  ],
-})
-
-/** On the clean layer, so it stays circular whatever the ground filter does. */
-const halo = (r0, r1, seconds) =>
-  el(
-    'circle',
-    { cx: W / 2, cy: HORIZON - 6, r: r0, fill: 'url(#pulse)', opacity: 0.6 },
-    el('animate', { attributeName: 'r', values: `${r0};${r1};${r0}`, dur: `${seconds}s`, repeatCount: 'indefinite' }) +
-      el('animate', { attributeName: 'opacity', values: '0.75;0;0.75', dur: `${seconds}s`, repeatCount: 'indefinite' })
-  )
-
 const warp = buildDisplacementMap({
   width: 100,
   height: 50,
@@ -102,8 +76,6 @@ const svg = svgDocument({
   ...scene({
     warp: { map: warp.dataURI, scale: warp.scale },
     rungs: rungElement,
-    extraDefs: pulseGradient,
-    moonExtra: halo(118, 176, 4.5),
   }),
 })
 
